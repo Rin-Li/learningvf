@@ -154,7 +154,7 @@ class Robot2D:
 
 if __name__ == "__main__":
 
-    x = torch.tensor([[-1.6,-0.75]]) # Initial robot pose
+    x = torch.tensor([[-1.6, -0.75]]) # Initial robot pose
     # x[1] = x[1] + np.pi
     rbt = Robot2D(num_joints=2,init_states = x,link_length=torch.tensor([[2,2]]).float())
     # a = torch.rand(5)
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     # f = rbt.forward_kinematics_any_point(x,a)
 
     kpts = rbt.surface_points_sampler(x).numpy()
-    # plt.plot(rbt.f_rob[0,0,:], rbt.f_rob[0,1,:], color=str(0), linewidth=1) # Plot robot
+    plt.plot(rbt.f_rob[0,0,:], rbt.f_rob[0,1,:], color=str(0), linewidth=1) # Plot robot
     plt.scatter(kpts[0,0,:], kpts[0,1,:], color=str(0), linewidth=1) # Plot robot
     plt.axis("equal")
     plt.show()
