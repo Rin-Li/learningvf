@@ -149,7 +149,6 @@ class RRTStarCSpace:
 if __name__ == "__main__":
     from robot.robot2D import Robot2D
     from robot.geometry import Circle
-    from SDF.sdf import SDF
     from robot.plt_robot import plt_robot
     from utils.upsample_path import upsample_path
 
@@ -160,7 +159,7 @@ if __name__ == "__main__":
         Circle(center=torch.tensor([4.0, 0.0], device=device), radius=0.5),
         Circle(center=torch.tensor([0.0, 4.0], device=device), radius=0.5),
     ]
-    sdf = SDF(robot, device=device)
+
     joint_limits = [(-torch.pi, torch.pi), (-torch.pi, torch.pi)]
 
     planner = RRTStarCSpace(
