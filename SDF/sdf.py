@@ -5,8 +5,9 @@ from typing import List
 import matplotlib.pyplot as plt
 
 class SDF:
-    def __init__(self, robot: Robot2D, device):
+    def __init__(self, robot: Robot2D, device='cpu'):
         self.robot = robot
+        self.device = device
         
     def inference_sdf(self, q, obj_lists : List[Circle],return_grad = False):  
         # using predefined object 
@@ -25,10 +26,12 @@ class SDF:
         return sdf
 
 def main():
-    robot = Robot2D(num_joints=2, init_states=torch.tensor([[-1.6, -0.75]]), link_length=torch.tensor([[2, 2]]).float())
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    Circle1 = Circle(center=torch.tensor([2.0, 0.0]), radius=1.0, device='cpu')
-    Circle2 = Circle(center=torch.tensor([0.0, 2.0]), radius=1.0, device='cpu')
+    robot = Robot2D(num_joints=2, init_states=torch.tensor([[-1.6, -0.75]]), link_length=torch.tensor([[2, 2]]).float(), device=device)
+    
+    Circle1 = Circle(center=torch.tensor([2.0, 0.0]), radius=1.0, device=device)
+    Circle2 = Circle(center=torch.tensor([0.0, 2.0]), radius=1.0, device=device)
     obj_lists = [Circle1, Circle2]
     sdf = SDF(robot, device='cpu')
     q = torch.tensor([[0, -0.75]])

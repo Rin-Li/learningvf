@@ -61,6 +61,8 @@ class Robot2D:
         Returns:
             f: Forward kinematics for all joints (B, 2, num_joints + 1)
         """
+        if x.dim() == 1:  # If x is 1D, add a batch dimension
+            x = x.unsqueeze(0)
         self.B = x.size(0)
         L = torch.tril(torch.ones([self.num_joints,self.num_joints])).expand(self.B,-1,-1).float().to(self.device)
         x = x.unsqueeze(2)
@@ -154,7 +156,7 @@ class Robot2D:
 
 if __name__ == "__main__":
 
-    x = torch.tensor([[-1.6, -0.75]]) # Initial robot pose
+    x = torch.tensor([[-2.5, -0.0]]) # Initial robot pose
     # x[1] = x[1] + np.pi
     rbt = Robot2D(num_joints=2,init_states = x,link_length=torch.tensor([[2,2]]).float())
     # a = torch.rand(5)
