@@ -6,7 +6,7 @@ from SDF.sdf import SDF
 
 class SamplingMPPIPlannerTorch:
     def __init__(self, q_ref, obstacle : Circle, robot : Robot2D, dt=0.1, H=20, n_samples=200,
-                 beta=1.5, gamma=0.9, alpha_mean=0.6, alpha_cov=0.6, device='cpu'):
+                 beta=1.0, gamma=0.98, alpha_mean=0.1, alpha_cov=0.1, device='cpu'):
         self.q_ref = torch.tensor(q_ref, dtype=torch.float32, device=device)
         self.dt = dt
         self.H = H
@@ -58,10 +58,12 @@ class SamplingMPPIPlannerTorch:
         
         # Reshape back to (B, H+1)
         sdf_all = sdf_values.reshape(self.n_samples, self.H + 1)
+        
+        weights = self.gamma ** torch.arange(self.H+1, device=device)  # (H+1,)
+        sdf_all = sdf_all * weights  # broadcasting
 
         # Evaluate cost
         total_cost = self.cost_fn.evaluate_costs(all_q, sdf_all)
-        print(f"Total cost shape: {total_cost.shape}, values: {total_cost}")
         return total_cost
 
     def sample_controls(self):
@@ -147,7 +149,7 @@ def main():
     planner.reset(q_start)
 
 
-    max_steps = 100
+    max_steps = 300
     for idx in range(max_steps):
         print(f"Step {idx + 1}/{max_steps}...")
 
