@@ -176,7 +176,7 @@ if __name__ == "__main__":
     q_start = torch.tensor([-2.5, 0.0], device=device)
     q_goal = torch.tensor([2.5, -0.6], device=device)
 
-    path = planner.plan(q_start, q_goal, prune=True, optimize=False)
+    path = planner.plan(q_start, q_goal, prune=False, optimize=False)
     if path is None:
         print("No path found.")
     else:

@@ -10,6 +10,15 @@ class SDF:
         self.device = device
         
     def inference_sdf(self, q, obj_lists : List[Circle],return_grad = False):  
+        '''
+        Args:
+            q: Robot configuration (B, num_joints)
+            obj_lists: List of Circle objects representing obstacles
+            return_grad: If True, returns the gradient of SDF with respect to q
+        Returns:
+            sdf: Signed distance function values (B, N) where N is the number of obstacles
+            grad: Gradient of SDF with respect to q (if return_grad is True)
+        '''
         # using predefined object 
         if return_grad:
             q = q.clone().detach().requires_grad_(True)
