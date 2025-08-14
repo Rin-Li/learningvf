@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+#
+# MIT License
+
 import torch
 from mppi_data_generator.cost import Cost
 from robot.robot2D import Robot2D
@@ -5,166 +9,101 @@ from robot.geometry import Circle
 from SDF.sdf import SDF
 
 class SamplingMPPIPlannerTorch:
-    def __init__(self, q_ref, obstacle : Circle, robot : Robot2D, dt=0.1, H=20, n_samples=200,
-                 beta=1.0, gamma=0.98, alpha_mean=0.1, alpha_cov=0.1, device='cpu'):
+    def __init__(self, q_ref, obstacle: Circle, robot: Robot2D, dt=0.01, H=50, n_samples=200,
+                 beta=2.0, gamma=1.0, alpha_mean=0.3, alpha_cov=0.8, device='cpu'):
         self.q_ref = torch.tensor(q_ref, dtype=torch.float32, device=device)
-        self.dt = dt
-        self.H = H
-        self.n_samples = n_samples
-        self.beta = beta
-        self.gamma = gamma
-        self.alpha_mean = alpha_mean
-        self.alpha_cov = alpha_cov
-        self.device = device
-        self.obs = obstacle
-
+        self.dt, self.H, self.n_samples = dt, H, n_samples
+        self.beta, self.gamma = beta, gamma
+        self.alpha_mean, self.alpha_cov = alpha_mean, alpha_cov
+        self.device, self.obs, self.robot = device, obstacle, robot
         self.mean = torch.zeros((H, 2), device=device)
         self.cov = torch.eye(2, device=device).repeat(H, 1, 1)
-
-        self.x_traj = []
-        self.sampled_us = []
-        
-        self.robot = robot
+        self.x_traj, self.sampled_us = [], []
         self.robot_sdf = SDF(self.robot, device=device)
         q_min = torch.tensor([-torch.pi, -torch.pi], device=device)
         q_max = torch.tensor([torch.pi, torch.pi], device=device)
         self.cost_fn = Cost(q_ref, q_min, q_max)
+        self.last_best_u = None
 
     def dynamics(self, x, u):
         return x + u * self.dt
 
     def cost(self, x0, u_seq):
-        '''
-        Args: 
-            x0: Initial state (B, 2)
-            u_seq: Control sequence (B, H, 2)
-            obs: List of obstacles (e.g., list of Circle objects)
-        Returns:
-            total_cost: (B,) tensor of total cost for each trajectory
-        '''
-        device = self.device
-
-        # Initialize all_q with shape (B, H+1, 2)
-        all_q = torch.zeros((self.n_samples, self.H + 1, 2), device=device)
-        all_q[:, 0] = x0
-
-        # Rollout trajectories
-        for h in range(self.H):
-            all_q[:, h + 1] = self.dynamics(all_q[:, h], u_seq[:, h])
-
-        # Flatten all_q to shape (B*(H+1), 2) for SDF inference
+        if x0.ndim == 1:
+            x0 = x0.expand(self.n_samples, -1)
+        cumu = torch.cumsum(u_seq, dim=1) * self.dt
+        all_q = torch.cat([x0.unsqueeze(1), x0.unsqueeze(1) + cumu], dim=1)
         q_flat = all_q.reshape(-1, 2)
-        sdf_values = self.robot_sdf.inference_sdf(q_flat, self.obs, return_grad=False)
-        
-        # Reshape back to (B, H+1)
-        sdf_all = sdf_values.reshape(self.n_samples, self.H + 1)
-        
-        weights = self.gamma ** torch.arange(self.H+1, device=device)  # (H+1,)
-        sdf_all = sdf_all * weights  # broadcasting
-
-        # Evaluate cost
-        total_cost = self.cost_fn.evaluate_costs(all_q, sdf_all)
-        return total_cost
+        sdf_all = self.robot_sdf.inference_sdf(q_flat, self.obs, return_grad=False).view(self.n_samples, self.H + 1)
+        return self.cost_fn.evaluate_costs(all_q, sdf_all)
 
     def sample_controls(self):
-        us = torch.zeros((self.n_samples, self.H, 2), device=self.device)
-        for i in range(self.n_samples):
-            for h in range(self.H):
-                dist = torch.distributions.MultivariateNormal(self.mean[h], self.cov[h])
-                us[i, h] = dist.sample()
-        return us
+        chol = torch.linalg.cholesky(self.cov)
+        eps = torch.randn(self.n_samples, self.H, 2, device=self.device)
+        return self.mean.unsqueeze(0) + torch.einsum('bhi,hij->bhj', eps, chol)
 
     def update_policy(self, x, u_all):
-        '''
-        Update the policy using the sampled controls and the cost function.
-        Args: 
-            x: Current state (B, 2)
-            obs: Obstacles (N, 2)
-        Returns:
-            mu_new: Updated mean control sequence (H, 2)
-        '''
         costs = self.cost(x, u_all)
-        
-        w = torch.exp(-self.beta * (costs - costs.min()))
-        w_sum = w.sum()
-
-        mu_new = torch.zeros_like(self.mean)
-        Sigma_new = torch.zeros_like(self.cov)
-
-        for h in range(self.H):
-            weighted_u = (w[:, None] * u_all[:, h]).sum(dim=0) / w_sum
-            mu_new[h] = (1 - self.alpha_mean) * self.mean[h] + self.alpha_mean * weighted_u
-
-            diff = u_all[:, h] - mu_new[h]
-            cov_h = torch.einsum('i,ij,ik->jk', w, diff, diff) / w_sum
-            Sigma_new[h] = (1 - self.alpha_cov) * self.cov[h] + self.alpha_cov * cov_h
-            Sigma_new[h] += 1e-6 * torch.eye(2, device=self.device)
-
-        self.mean = mu_new
-        self.cov = Sigma_new
-        return mu_new[0]
+        w = torch.softmax(-costs / self.beta, dim=0)
+        mu_new = (w[:, None, None] * u_all).sum(0)
+        diff = u_all - mu_new.unsqueeze(0)
+        Sigma_new = torch.einsum('b,bhi,bhj->hij', w, diff, diff)
+        self.mean = (1 - self.alpha_mean) * self.mean + self.alpha_mean * mu_new
+        # self.cov = (1 - self.alpha_cov) * self.cov + self.alpha_cov * Sigma_new
+        # Exploration term
+        self.cov += 1e-2 * torch.eye(2, device=self.device).repeat(self.H, 1, 1)
+        return self.mean[0], costs
 
     def reset(self, x_start):
-        self.mean = torch.zeros((self.H, 2), device=self.device)
-        self.cov = torch.eye(2, device=self.device).repeat(self.H, 1, 1)
+        self.mean.zero_()
+        sigma_init = 2.0
+        self.cov = (sigma_init ** 2) * torch.eye(2, device=self.device).repeat(self.H, 1, 1)
         self.x_traj = [torch.tensor(x_start, dtype=torch.float32, device=self.device)]
         self.sampled_us = []
+        self.last_best_u = None
 
-    def step(self):
+    def step(self, step_idx=None):
         x = self.x_traj[-1]
         u_all = self.sample_controls()
         self.sampled_us.append(u_all)
-
-        best_u = self.update_policy(x, u_all)
+        best_u, costs = self.update_policy(x, u_all)
         x_next = self.dynamics(x, best_u)
         self.x_traj.append(x_next)
+
+        # Debug prints
+        goal_dir = (self.q_ref - x).cpu().numpy()
+        cov_diag_mean = torch.mean(torch.diagonal(self.cov, dim1=-2, dim2=-1)).item()
+        print(f"[Step {step_idx if step_idx is not None else len(self.x_traj)-1}]")
+        print(f"  Best control: {best_u.cpu().numpy()}")
+        print(f"  Goal direction: {goal_dir}")
+        print(f"  Cov diag mean: {cov_diag_mean:.6f}")
+        print(f"  Avg cost: {costs.mean().item():.6f}")
+
+        if self.last_best_u is not None and torch.allclose(best_u, self.last_best_u, atol=1e-3):
+            print("  ⚠ Best_u unchanged → Possible covariance collapse")
+
+        self.last_best_u = best_u.clone()
         return x_next
 
     def get_trajectory(self):
         return torch.stack(self.x_traj)
 
+
 def main():
     from robot.plt_robot import plt_robot
-    device = "cpu"
-    x = torch.tensor([0.0, 0.0], device=device)
-
-
-    robot = Robot2D(num_joints=2, init_states=x.unsqueeze(0),
-                    link_length=torch.tensor([[2.0, 2.0]], device=device))
-
-
-    circles = [
-        Circle(center=torch.tensor([4.0, 0.0], device=device), radius=0.5),
-        Circle(center=torch.tensor([0.0, 4.0], device=device), radius=0.5),
-    ]
-
-
-    q_start = torch.tensor([-2.5, 0.0], device=device)
-    q_goal = torch.tensor([2.5, -0.6], device=device)
-
-
+    device = 'cpu'
+    robot = Robot2D(num_joints=2, init_states=torch.tensor([[0.0, 0.0]], device=device), link_length=torch.tensor([[2.0, 2.0]], device=device))
+    circles = [Circle(center=torch.tensor([0.0, 2.45], device=device), radius=0.3), Circle(center=torch.tensor([2.3, -2.3], device=device), radius=0.3)]
+    q_start = torch.tensor([2.1651123, 1.2108364], device=device)
+    q_goal = torch.tensor([-2.1001303, -0.88734066], device=device)
     planner = SamplingMPPIPlannerTorch(q_goal, circles, robot, device=device)
-
-
     planner.reset(q_start)
-
-
-    max_steps = 300
-    for idx in range(max_steps):
-        print(f"Step {idx + 1}/{max_steps}...")
-
-
+    for _ in range(300):
         x_next = planner.step()
-        print(f"Current state: {x_next.cpu().numpy()}")
-
-        if torch.norm(x_next - q_goal) < 0.05:
-            print("Reached goal!")
+        if torch.norm(x_next - q_goal) < 0.1:
             break
-
-
     traj = planner.get_trajectory().cpu()
-    print("Trajectory shape:", traj.shape)
     plt_robot(robot, traj, circles)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
