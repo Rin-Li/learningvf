@@ -325,62 +325,62 @@ def run_experiment_from_files(start_arr: np.ndarray,
     return success_cnt, avg_steps, path_lengths_all, path_lengths_succ, path_lengths_fail
 
 
-# def main():
-#     device = "cpu"
-#     x = torch.tensor([0.0, 0.0], device=device)
-#     robot = Robot2D(num_joints=2, init_states=x.unsqueeze(0),
-#                     link_length=torch.tensor([[2.0, 2.0]], device=device))
-
-#     circles = [
-#         Circle(center=torch.tensor([0.0, 2.45], device=device), radius=0.3),
-#         Circle(center=torch.tensor([2.3, -2.3], device=device), radius=0.3),
-#     ]
-
-#     q_start = torch.tensor([ 2.1651123,  1.2108364 ], device=device)
-#     q_goal  = torch.tensor([-2.1001303, -0.88734066], device=device)
-
-#     planner = SamplingMPPIPlannerTorch(q_goal, circles, robot, device=device)
-#     planner.reset(q_start)
-
-#     max_steps = 5000
-#     for idx in range(max_steps):
-#         print(f"Step {idx + 1}/{max_steps}...")
-#         x_next = planner.step()
-#         print(f"Current state: {x_next.cpu().numpy()}")
-#         if torch.norm(x_next - q_goal) < 0.1:
-#             print("Reached goal!")
-#             break
-
-#     traj = planner.get_trajectory().cpu().numpy()
-#     print("Trajectory shape:", traj.shape)
-
-
-#     obs_list = [(float(c.center[0]), float(c.center[1]), float(c.radius)) for c in circles]
-#     np.save("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/mppi_original_1.npy", traj)
-#     plot_2link_with_obstacle(traj, link_lengths=(2, 2), obstacles=obs_list, show_traj=True)
-    
-#     start = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/start.npy", allow_pickle=True)
-#     goal = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/goal.npy", allow_pickle=True)
-
-
 def main():
     device = "cpu"
     x = torch.tensor([0.0, 0.0], device=device)
     robot = Robot2D(num_joints=2, init_states=x.unsqueeze(0),
                     link_length=torch.tensor([[2.0, 2.0]], device=device))
+
     circles = [
         Circle(center=torch.tensor([0.0, 2.45], device=device), radius=0.3),
         Circle(center=torch.tensor([2.3, -2.3], device=device), radius=0.3),
     ]
 
-    # 加载给定的 start / goal
-    start = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/start.npy", allow_pickle=True)
-    goal  = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/goal.npy",  allow_pickle=True)
-    start = np.asarray(start)  # 确保是 [N,2]
-    goal  = np.asarray(goal)
+    q_start = torch.tensor([ 2.1651123,  1.2108364 ], device=device)
+    q_goal  = torch.tensor([-2.1001303, -0.88734066], device=device)
 
-    run_experiment_from_files(start, goal, circles, robot, device=device,
-                              max_steps=5000, tol=0.1, verbose_every=10)
+    planner = SamplingMPPIPlannerTorch(q_goal, circles, robot, device=device)
+    planner.reset(q_start)
+
+    max_steps = 5000
+    for idx in range(max_steps):
+        print(f"Step {idx + 1}/{max_steps}...")
+        x_next = planner.step()
+        print(f"Current state: {x_next.cpu().numpy()}")
+        if torch.norm(x_next - q_goal) < 0.1:
+            print("Reached goal!")
+            break
+
+    traj = planner.get_trajectory().cpu().numpy()
+    print("Trajectory shape:", traj.shape)
+
+
+    obs_list = [(float(c.center[0]), float(c.center[1]), float(c.radius)) for c in circles]
+    np.save("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/mppi_original_1.npy", traj)
+    plot_2link_with_obstacle(traj, link_lengths=(2, 2), obstacles=obs_list, show_traj=True)
+    
+    start = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/start.npy", allow_pickle=True)
+    goal = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/goal.npy", allow_pickle=True)
+
+
+# def main():
+#     device = "cpu"
+#     x = torch.tensor([0.0, 0.0], device=device)
+#     robot = Robot2D(num_joints=2, init_states=x.unsqueeze(0),
+#                     link_length=torch.tensor([[2.0, 2.0]], device=device))
+#     circles = [
+#         Circle(center=torch.tensor([0.0, 2.45], device=device), radius=0.3),
+#         Circle(center=torch.tensor([2.3, -2.3], device=device), radius=0.3),
+#     ]
+
+#     # 加载给定的 start / goal
+#     start = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/start.npy", allow_pickle=True)
+#     goal  = np.load("/Users/yulinli/Desktop/Exp/sampling_CBF/2Dexamples/goal.npy",  allow_pickle=True)
+#     start = np.asarray(start)  # 确保是 [N,2]
+#     goal  = np.asarray(goal)
+
+#     run_experiment_from_files(start, goal, circles, robot, device=device,
+#                               max_steps=5000, tol=0.1, verbose_every=10)
 
 
 if __name__ == "__main__":
